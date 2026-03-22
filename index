@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WB / Ozon — Аналитика прибыли</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f0f;--surface:#1a1a1a;--surface2:#222;
+  --border:#2a2a2a;--border2:#333;
+  --text:#e8e8e8;--text2:#888;--text3:#555;
+  --accent:#c8f56a;--accent-dim:rgba(200,245,106,0.1);
+  --red:#ff5c5c;--amber:#ffb84d;--green:#c8f56a;
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;min-height:100vh}
+header{border-bottom:1px solid var(--border);padding:18px 32px;display:flex;align-items:center;gap:16px}
+.logo{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent);letter-spacing:.05em;text-transform:uppercase}
+.logo-sub{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.main{max-width:1300px;margin:0 auto;padding:28px 32px}
+
+/* Upload */
+.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px}
+.upload-col{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 20px}
+.upload-col-title{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.badge-wb{background:rgba(167,122,255,.15);color:#a77aff}
+.badge-oz{background:rgba(0,194,255,.15);color:#00c2ff}
+.badge{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:3px;font-weight:500}
+.drop-zone{border:1px dashed var(--border2);border-radius:6px;padding:14px;text-align:center;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;margin-bottom:10px}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:var(--accent-dim)}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-zone-text{font-size:12px;color:var(--text3);font-family:var(--mono)}
+.file-list{display:flex;flex-direction:column;gap:6px}
+.file-tag{display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:5px 10px;font-family:var(--mono);font-size:11px;color:var(--accent)}
+.file-tag button{background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:0 0 0 8px}
+.file-tag button:hover{color:var(--red)}
+
+/* Costs */
+.cost-section{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 22px;margin-bottom:20px;display:none}
+.cost-section.visible{display:block}
+.section-label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:14px}
+.cost-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.cost-item{display:flex;flex-direction:column;gap:5px}
+.cost-item label{font-size:11px;color:var(--text2)}
+.cost-item input{background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:6px 10px;color:var(--text);font-family:var(--mono);font-size:13px;width:100%;transition:border-color .15s}
+.cost-item input:focus{outline:none;border-color:var(--accent)}
+
+/* Metrics */
+.metrics-grid{display:none;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+.metric-label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:7px}
+.metric-value{font-family:var(--mono);font-size:18px;font-weight:500}
+.metric-value.green{color:var(--green)}
+.metric-value.red{color:var(--red)}
+.metric-sub{font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:3px}
+
+/* Chart */
+.chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 22px;margin-bottom:20px;display:none}
+.chart-wrap.visible{display:block}
+.chart-container{position:relative;height:220px}
+.legend{display:flex;gap:18px;margin-bottom:12px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);font-family:var(--mono)}
+.legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+
+/* Table */
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:auto;display:none}
+.table-wrap.visible{display:block}
+table{width:100%;border-collapse:collapse;min-width:1100px}
+thead tr{background:var(--surface2);border-bottom:1px solid var(--border)}
+th{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:11px 12px;text-align:right;font-weight:400;white-space:nowrap}
+th:first-child{text-align:left;min-width:260px}
+td{padding:11px 12px;text-align:right;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--text);white-space:nowrap}
+td.name-cell{text-align:left;font-family:var(--sans);font-size:13px;min-width:260px;max-width:320px;white-space:normal;word-break:break-word;line-height:1.4}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.badge-green{background:rgba(200,245,106,.15);color:#c8f56a}
+.badge-amber{background:rgba(255,184,77,.15);color:#ffb84d}
+.badge-red{background:rgba(255,92,92,.15);color:#ff5c5c}
+.profit-pos{color:var(--green)}
+.profit-neg{color:var(--red)}
+.profit-mid{color:var(--amber)}
+.dim{color:var(--text3);font-size:11px}
+.empty{text-align:center;padding:56px 20px;color:var(--text3);font-family:var(--mono);font-size:13px}
+.empty-icon{font-size:28px;margin-bottom:10px;opacity:.4}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">WB / Ozon Profit</div>
+    <div class="logo-sub">аналитика маркетплейсов · несколько отчётов за период</div>
+  </div>
+</header>
+<div class="main">
+
+  <div class="upload-grid">
+    <!-- WB -->
+    <div class="upload-col">
+      <div class="upload-col-title">
+        <span class="badge badge-wb">WB</span> Детализированные отчёты
+      </div>
+      <div class="drop-zone" id="drop-wb">
+        <input type="file" accept=".xlsx,.xls" id="file-wb" multiple>
+        <div class="drop-zone-text">+ Добавить файлы (можно несколько)</div>
+      </div>
+      <div class="file-list" id="list-wb"></div>
+    </div>
+    <!-- Ozon -->
+    <div class="upload-col">
+      <div class="upload-col-title">
+        <span class="badge badge-oz">Ozon</span> Отчёты о реализации
+      </div>
+      <div class="drop-zone" id="drop-oz">
+        <input type="file" accept=".xlsx,.xls" id="file-oz" multiple>
+        <div class="drop-zone-text">+ Добавить файлы (можно несколько)</div>
+      </div>
+      <div class="file-list" id="list-oz"></div>
+    </div>
+  </div>
+
+  <div class="cost-section" id="cost-section">
+    <div class="section-label">Себестоимость (₽ за единицу)</div>
+    <div class="cost-grid" id="cost-grid"></div>
+  </div>
+
+  <div class="metrics-grid" id="metrics-grid">
+    <div class="metric"><div class="metric-label">Выручка</div><div class="metric-value" id="m-revenue">—</div></div>
+    <div class="metric"><div class="metric-label">Себестоимость</div><div class="metric-value" id="m-cost">—</div><div class="metric-sub" id="m-cost-pct"></div></div>
+    <div class="metric"><div class="metric-label">Комиссия</div><div class="metric-value" id="m-comm">—</div><div class="metric-sub" id="m-comm-pct"></div></div>
+    <div class="metric"><div class="metric-label">Логистика</div><div class="metric-value" id="m-log">—</div><div class="metric-sub" id="m-log-pct"></div></div>
+    <div class="metric"><div class="metric-label">Чистая прибыль</div><div class="metric-value" id="m-profit">—</div><div class="metric-sub" id="m-margin"></div></div>
+  </div>
+
+  <div class="chart-wrap" id="chart-wrap">
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#555;"></div>Себестоимость</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#a77aff;"></div>Комиссия</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#7F77DD;"></div>Логистика</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#c8f56a;"></div>Прибыль</div>
+    </div>
+    <div class="chart-container"><canvas id="mainChart"></canvas></div>
+  </div>
+
+  <div class="table-wrap" id="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left">Товар</th>
+          <th>Пл.</th>
+          <th>Шт.</th>
+          <th>Выручка</th>
+          <th>Себест. ₽</th>
+          <th>Себест. %</th>
+          <th>Комиссия ₽</th>
+          <th>Комиссия %</th>
+          <th>Логистика ₽</th>
+          <th>Логистика %</th>
+          <th>Прибыль ₽</th>
+          <th>Маржа %</th>
+          <th>Прибыль/шт</th>
+        </tr>
+      </thead>
+      <tbody id="main-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="empty" id="empty-state">
+    <div class="empty-icon">📊</div>
+    Загрузи отчёты WB или Ozon — можно сразу несколько файлов за разные недели
+  </div>
+</div>
+
+<script>
+// state: накапливаем данные по файлам
+const state = {
+  wbFiles: {},   // filename -> parsed products[]
+  ozFiles: {},
+  costs: {}
+};
+let chartInst = null;
+
+const rub = v => Math.round(v).toLocaleString('ru') + ' ₽';
+const pct = (v,t) => t>0 ? (v/t*100).toFixed(1)+'%' : '—';
+const badgeCls = m => m>=.55?'badge-green':m>=.35?'badge-amber':'badge-red';
+const profCls  = p => p>300?'profit-pos':p>=0?'profit-mid':'profit-neg';
+
+// ── WB parser ──────────────────────────────────────────────
+function parseWB(wb) {
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows  = XLSX.utils.sheet_to_json(sheet, {defval:''});
+  const map   = {};
+  rows.forEach(r => {
+    const name   = String(r['Название']||'').trim();
+    const type   = String(r['Тип документа']||'');
+    const reason = String(r['Обоснование для оплаты']||'');
+    if (!name) return;
+    if (!map[name]) map[name] = {name, platform:'WB', qty:0, revenue:0, logistics:0, commission:0};
+    if (type === 'Продажа') {
+      map[name].qty        += +(r['Кол-во']||0);
+      map[name].revenue    += +(r['К перечислению Продавцу за реализованный Товар']||0);
+      map[name].commission += Math.abs(+(r['Вознаграждение Вайлдберриз (ВВ), без НДС']||0));
+    }
+    if (reason === 'Логистика') {
+      map[name].logistics  += +(r['Услуги по доставке товара покупателю']||0);
+    }
+  });
+  return Object.values(map).filter(p => p.qty > 0);
+}
+
+// ── Ozon parser ────────────────────────────────────────────
+function parseOzon(wb) {
+  const sheet   = wb.Sheets[wb.SheetNames[0]];
+  const rawRows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+
+  // Ozon report has 3 header rows:
+  // row hi   — top-level groups (Название товара, Реализовано, Возвращено клиентом...)
+  // row hi+1 — sub-column names (Кол-во, Реализовано на сумму, Базовое вознаграждение...)
+  // row hi+2 — column numbers (1, 2, 3...)
+  // data starts at hi+3
+
+  let hi = -1;
+  for (let i = 0; i < rawRows.length; i++) {
+    if (rawRows[i].some(c => String(c).includes('Название товара'))) { hi = i; break; }
+  }
+  if (hi < 0) return [];
+
+  // Use sub-header row (hi+1) for column detection
+  const subHeader = (rawRows[hi+1] || []).map(String);
+
+  // Fixed column indices based on Ozon report structure:
+  // col 1  = Название товара (from top header row)
+  // col 8  = Кол-во (продажи) — in sub-header row
+  // col 5  = Реализовано на сумму
+  // col 12 = Базовое вознаграждение Ozon
+  // col 13 = Итого к начислению
+  const iName = 1;
+  const iQty  = subHeader.findIndex(x => x.includes('Кол-во') && !x.toLowerCase().includes('возврат'));
+  const iSum  = subHeader.findIndex(x => x.includes('Реализовано на сумму'));
+  const iComm = subHeader.findIndex(x => x.includes('Базовое вознаграждение Ozon'));
+  const iPay  = subHeader.findIndex(x => x.includes('Итого к начислению'));
+
+  // fallback to known fixed indices if detection fails
+  const qtyIdx  = iQty  >= 0 ? iQty  : 8;
+  const sumIdx  = iSum  >= 0 ? iSum  : 5;
+  const commIdx = iComm >= 0 ? iComm : 12;
+  const payIdx  = iPay  >= 0 ? iPay  : 13;
+
+  const map = {};
+  // data starts at hi+3 (skip 3 header rows)
+  for (let i = hi + 3; i < rawRows.length; i++) {
+    const r    = rawRows[i];
+    const name = String(r[iName]||'').trim();
+    // skip empty rows, sub-headers, number-only rows
+    if (!name || /^\d+$/.test(name) || name === 'None') continue;
+
+    if (!map[name]) map[name] = {name, platform:'Ozon', qty:0, revenue:0, logistics:0, commission:0};
+
+    const qty  = +(r[qtyIdx] ||0);
+    const sum  = +(r[sumIdx] ||0);
+    const comm = Math.abs(+(r[commIdx]||0));
+    const pay  = +(r[payIdx] ||0);
+
+    if (qty <= 0 && sum <= 0) continue; // skip return/empty rows
+
+    map[name].qty        += qty;
+    map[name].revenue    += sum;
+    map[name].commission += comm;
+    if (pay > sum) map[name].logistics += (pay - sum);
+  }
+
+  return Object.values(map).filter(p => p.qty > 0);
+}
+
+// ── Merge all loaded files into one product list ───────────
+function buildProducts() {
+  const wbMerge = {};
+  const ozMerge = {};
+
+  Object.values(state.wbFiles).forEach(list => {
+    list.forEach(p => {
+      if (!wbMerge[p.name]) wbMerge[p.name] = {...p};
+      else {
+        wbMerge[p.name].qty        += p.qty;
+        wbMerge[p.name].revenue    += p.revenue;
+        wbMerge[p.name].commission += p.commission;
+        wbMerge[p.name].logistics  += p.logistics;
+      }
+    });
+  });
+
+  Object.values(state.ozFiles).forEach(list => {
+    list.forEach(p => {
+      if (!ozMerge[p.name]) ozMerge[p.name] = {...p};
+      else {
+        ozMerge[p.name].qty        += p.qty;
+        ozMerge[p.name].revenue    += p.revenue;
+        ozMerge[p.name].commission += p.commission;
+        ozMerge[p.name].logistics  += p.logistics;
+      }
+    });
+  });
+
+  return [...Object.values(wbMerge), ...Object.values(ozMerge)];
+}
+
+// ── Render cost inputs ─────────────────────────────────────
+function renderCosts(products) {
+  if (!products.length) return;
+  document.getElementById('cost-section').classList.add('visible');
+  const grid  = document.getElementById('cost-grid');
+  const names = [...new Set(products.map(p => p.name))];
+
+  // keep existing inputs, only add new ones
+  const existing = new Set([...grid.querySelectorAll('input')].map(i => i.dataset.name));
+  names.forEach(name => {
+    if (existing.has(name)) return;
+    const d   = document.createElement('div');
+    d.className = 'cost-item';
+    d.innerHTML = `<label title="${name}">${name}</label>
+      <input type="number" min="0" placeholder="0" value="${state.costs[name]||''}" data-name="${name}">`;
+    grid.appendChild(d);
+  });
+
+  grid.querySelectorAll('input').forEach(inp => {
+    inp.oninput = e => { state.costs[e.target.dataset.name] = +e.target.value||0; recalc(); };
+  });
+}
+
+// ── Main recalc ────────────────────────────────────────────
+function recalc() {
+  const products = buildProducts();
+  if (!products.length) return;
+
+  document.getElementById('empty-state').style.display  = 'none';
+  document.getElementById('metrics-grid').style.display = 'grid';
+  document.getElementById('chart-wrap').classList.add('visible');
+  document.getElementById('table-wrap').classList.add('visible');
+
+  renderCosts(products);
+
+  const rows = products.map(p => {
+    const cu     = state.costs[p.name]||0;
+    const ct     = cu * p.qty;
+    const profit = p.revenue - p.commission - p.logistics - ct;
+    const margin = p.revenue > 0 ? profit / p.revenue : 0;
+    return {...p, costUnit:cu, costTotal:ct, profit, margin, perUnit: p.qty>0 ? Math.round(profit/p.qty) : 0};
+  }).sort((a,b) => b.revenue - a.revenue);
+
+  const T = rows.reduce((a,r) => ({
+    revenue:    a.revenue    + r.revenue,
+    cost:       a.cost       + r.costTotal,
+    commission: a.commission + r.commission,
+    logistics:  a.logistics  + r.logistics,
+    profit:     a.profit     + r.profit,
+  }), {revenue:0,cost:0,commission:0,logistics:0,profit:0});
+
+  // metrics
+  document.getElementById('m-revenue').textContent   = rub(T.revenue);
+  document.getElementById('m-cost').textContent      = rub(T.cost);
+  document.getElementById('m-cost-pct').textContent  = pct(T.cost, T.revenue) + ' от выручки';
+  document.getElementById('m-comm').textContent      = rub(T.commission);
+  document.getElementById('m-comm-pct').textContent  = pct(T.commission, T.revenue) + ' от выручки';
+  document.getElementById('m-log').textContent       = rub(T.logistics);
+  document.getElementById('m-log-pct').textContent   = pct(T.logistics, T.revenue) + ' от выручки';
+  const pe = document.getElementById('m-profit');
+  pe.textContent = rub(T.profit);
+  pe.className   = 'metric-value ' + (T.profit >= 0 ? 'green' : 'red');
+  document.getElementById('m-margin').textContent = 'маржа ' + pct(T.profit, T.revenue);
+
+  // table
+  const tbody = document.getElementById('main-tbody');
+  tbody.innerHTML = '';
+  rows.forEach(r => {
+    const hc  = r.costUnit > 0;
+    const tr  = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="name-cell">${r.name}</td>
+      <td><span class="badge ${r.platform==='WB'?'badge-wb':'badge-oz'}">${r.platform}</span></td>
+      <td>${r.qty}</td>
+      <td>${rub(r.revenue)}</td>
+      <td>${hc ? rub(r.costTotal) : '<span class="dim">—</span>'}</td>
+      <td class="dim">${hc ? pct(r.costTotal, r.revenue) : '—'}</td>
+      <td>${rub(r.commission)}</td>
+      <td class="dim">${pct(r.commission, r.revenue)}</td>
+      <td>${rub(r.logistics)}</td>
+      <td class="dim">${pct(r.logistics, r.revenue)}</td>
+      <td class="${hc ? profCls(r.profit) : ''}">${hc ? rub(r.profit) : '<span class="dim">введи себест.</span>'}</td>
+      <td>${hc ? '<span class="badge '+badgeCls(r.margin)+'">'+(r.margin*100).toFixed(1)+'%</span>' : '<span class="dim">—</span>'}</td>
+      <td class="${hc ? profCls(r.perUnit) : ''}">${hc ? rub(r.perUnit) : '<span class="dim">—</span>'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // chart top-8
+  const top    = rows.slice(0, 8);
+  const labels = top.map(r => r.name.slice(0, 22));
+  const ds = [
+    {label:'Себестоимость', data:top.map(r=>Math.round(r.costTotal)),             backgroundColor:'#555',    stack:'s'},
+    {label:'Комиссия',      data:top.map(r=>Math.round(r.commission)),             backgroundColor:'#a77aff', stack:'s'},
+    {label:'Логистика',     data:top.map(r=>Math.round(r.logistics)),              backgroundColor:'#7F77DD', stack:'s'},
+    {label:'Прибыль',       data:top.map(r=>Math.round(Math.max(r.profit, 0))),   backgroundColor:'#c8f56a', stack:'s'},
+  ];
+  if (chartInst) {
+    chartInst.data.labels = labels;
+    chartInst.data.datasets.forEach((d,i) => d.data = ds[i].data);
+    chartInst.update();
+  } else {
+    chartInst = new Chart(document.getElementById('mainChart'), {
+      type: 'bar',
+      data: {labels, datasets: ds},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {legend: {display: false}},
+        scales: {
+          x: {stacked:true, ticks:{color:'#555', font:{size:11, family:'IBM Plex Mono'}, autoSkip:false, maxRotation:25}, grid:{color:'#1e1e1e'}},
+          y: {stacked:true, ticks:{color:'#555', font:{size:11, family:'IBM Plex Mono'}, callback: v => v.toLocaleString('ru')+'₽'}, grid:{color:'#1e1e1e'}}
+        }
+      }
+    });
+  }
+}
+
+// ── File handling ──────────────────────────────────────────
+function addFileTag(listId, name, type, filename) {
+  const list = document.getElementById(listId);
+  // avoid duplicate
+  if ([...list.querySelectorAll('[data-file]')].some(el => el.dataset.file === filename)) return;
+  const div = document.createElement('div');
+  div.className = 'file-tag';
+  div.dataset.file = filename;
+  div.innerHTML = `<span>✓ ${name}</span><button title="Удалить">✕</button>`;
+  div.querySelector('button').onclick = () => {
+    if (type === 'wb') delete state.wbFiles[filename];
+    else delete state.ozFiles[filename];
+    div.remove();
+    recalc();
+  };
+  list.appendChild(div);
+}
+
+function readFile(file, type) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb       = XLSX.read(e.target.result, {type:'binary', cellDates:true});
+    const products = type === 'wb' ? parseWB(wb) : parseOzon(wb);
+    if (type === 'wb') state.wbFiles[file.name] = products;
+    else               state.ozFiles[file.name] = products;
+    addFileTag(type === 'wb' ? 'list-wb' : 'list-oz', file.name, type, file.name);
+    recalc();
+  };
+  reader.readAsBinaryString(file);
+}
+
+function handleFiles(files, type) {
+  [...files].forEach(f => readFile(f, type));
+}
+
+document.getElementById('file-wb').addEventListener('change', e => handleFiles(e.target.files, 'wb'));
+document.getElementById('file-oz').addEventListener('change', e => handleFiles(e.target.files, 'oz'));
+
+['wb','oz'].forEach(type => {
+  const el = document.getElementById('drop-' + type);
+  el.addEventListener('dragover',  e => { e.preventDefault(); el.classList.add('drag-over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+  el.addEventListener('drop', e => {
+    e.preventDefault(); el.classList.remove('drag-over');
+    handleFiles(e.dataTransfer.files, type);
+  });
+});
+</script>
+</body>
+</html>
