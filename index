@@ -212,63 +212,59 @@ function parseWB(wb) {
 }
 
 // ── Ozon parser ────────────────────────────────────────────
+// Структура отчёта Ozon:
+// строка hi   — верхние группы (Название товара, Реализовано...)
+// строка hi+1 — названия колонок (Кол-во, Реализовано на сумму, Базовое вознаграждение...)
+// строка hi+2 — номера колонок (1, 2, 3...)
+// строка hi+3 — первая строка данных (каждый заказ = отдельная строка)
+// Индексы: name=1, qty=8, sum=5, comm=12, pay=13
 function parseOzon(wb) {
   const sheet   = wb.Sheets[wb.SheetNames[0]];
-  const rawRows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
-
-  // Ozon report has 3 header rows:
-  // row hi   — top-level groups (Название товара, Реализовано, Возвращено клиентом...)
-  // row hi+1 — sub-column names (Кол-во, Реализовано на сумму, Базовое вознаграждение...)
-  // row hi+2 — column numbers (1, 2, 3...)
-  // data starts at hi+3
+  const rawRows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:null});
 
   let hi = -1;
   for (let i = 0; i < rawRows.length; i++) {
-    if (rawRows[i].some(c => String(c).includes('Название товара'))) { hi = i; break; }
+    if (rawRows[i].some(c => String(c||'').includes('Название товара'))) { hi = i; break; }
   }
   if (hi < 0) return [];
 
-  // Use sub-header row (hi+1) for column detection
-  const subHeader = (rawRows[hi+1] || []).map(String);
-
-  // Fixed column indices based on Ozon report structure:
-  // col 1  = Название товара (from top header row)
-  // col 8  = Кол-во (продажи) — in sub-header row
-  // col 5  = Реализовано на сумму
-  // col 12 = Базовое вознаграждение Ozon
-  // col 13 = Итого к начислению
+  // detect column indices from sub-header row (hi+1)
+  const sub = (rawRows[hi+1]||[]).map(c => String(c||''));
   const iName = 1;
-  const iQty  = subHeader.findIndex(x => x.includes('Кол-во') && !x.toLowerCase().includes('возврат'));
-  const iSum  = subHeader.findIndex(x => x.includes('Реализовано на сумму'));
-  const iComm = subHeader.findIndex(x => x.includes('Базовое вознаграждение Ozon'));
-  const iPay  = subHeader.findIndex(x => x.includes('Итого к начислению'));
+  const iQty  = sub.findIndex(x => x.includes('Кол-во') && !x.toLowerCase().includes('возврат'));
+  const iSum  = sub.findIndex(x => x.includes('Реализовано на сумму'));
+  const iComm = sub.findIndex(x => x.includes('Базовое вознаграждение Ozon'));
+  const iPay  = sub.findIndex(x => x.includes('Итого к начислению'));
 
-  // fallback to known fixed indices if detection fails
-  const qtyIdx  = iQty  >= 0 ? iQty  : 8;
-  const sumIdx  = iSum  >= 0 ? iSum  : 5;
-  const commIdx = iComm >= 0 ? iComm : 12;
-  const payIdx  = iPay  >= 0 ? iPay  : 13;
+  // fallback to known fixed positions
+  const QI = iQty  >= 0 ? iQty  : 8;
+  const SI = iSum  >= 0 ? iSum  : 5;
+  const CI = iComm >= 0 ? iComm : 12;
+  const PI = iPay  >= 0 ? iPay  : 13;
 
   const map = {};
-  // data starts at hi+3 (skip 3 header rows)
+
   for (let i = hi + 3; i < rawRows.length; i++) {
-    const r    = rawRows[i];
+    const r = rawRows[i];
+    if (!r || r.length < 6) continue;
+
     const name = String(r[iName]||'').trim();
-    // skip empty rows, sub-headers, number-only rows
-    if (!name || /^\d+$/.test(name) || name === 'None') continue;
+    if (!name || /^\d+$/.test(name)) continue;
 
-    if (!map[name]) map[name] = {name, platform:'Ozon', qty:0, revenue:0, logistics:0, commission:0};
+    const qty  = parseFloat(r[QI]) || 0;
+    const sum  = parseFloat(r[SI]) || 0;
+    const comm = Math.abs(parseFloat(r[CI]) || 0);
+    const pay  = parseFloat(r[PI]) || 0;
 
-    const qty  = +(r[qtyIdx] ||0);
-    const sum  = +(r[sumIdx] ||0);
-    const comm = Math.abs(+(r[commIdx]||0));
-    const pay  = +(r[payIdx] ||0);
+    // Ozon: каждая строка = 1 заказ, qty всегда 1
+    // пропускаем строки без продажи
+    if (sum <= 0) continue;
 
-    if (qty <= 0 && sum <= 0) continue; // skip return/empty rows
-
-    map[name].qty        += qty;
+    if (!map[name]) map[name] = {name, platform:'Ozon', qty:0, revenue:0, commission:0, logistics:0};
+    map[name].qty        += (qty > 0 ? qty : 1);
     map[name].revenue    += sum;
     map[name].commission += comm;
+    // логистика = разница между выплатой и реализацией (если выплата > реализации)
     if (pay > sum) map[name].logistics += (pay - sum);
   }
 
